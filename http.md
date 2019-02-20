@@ -402,3 +402,392 @@ sendfile()机制，减少文件在内存中的复制次数，从而节约服务�
 
 ## httpd(Apache)
 
+历史：
+
+```
+俗称Apache，任务完成后程序员自发组织继续维护；
+在原有Apache上打了很多补丁，顾戏称为 a pachey server = apache 
+Apache野蛮生长后，反正成为一个软件基金会；
+```
+
+### httpd的高度模块化：
+
+使用 core + modules的模式开发；
+
+DSO： Dynamic Shared Object， 动态共享对象；
+
+* MPM： Multipath Processing Module，多道处理模块：
+
+    并非一个模块，而是对一种特性的称谓；
+  - prefork： 一个进程一个请求，基于select()模型；
+
+    创建子进程的过程：
+      * 创建task_struct: 任务结构；
+      * 为子进程分配内存；
+
+    prefork即为提前创建子进程：
+      * 需设定最小空闲进程数；
+      * 需设定最大空闲数；
+      * 需设定最大进程数上限；
+
+  - worker： 一个进程多个线程，一个线程响应一个请求；
+    *  相对于prefork：优点：节约内存； 但稳定性不如prefork；
+  - event： event-driven： 事件驱动，主要目的在于实现单线程响应多个请求；
+    * 单线程响应多个请求，基于事件驱动；
+
+---
+
+### httpd版本：
+
+* httpd-1.3
+* httpd-2.0
+* httpd-2.2： CentOS6默认支持，不支持event；
+* httpd-2.4： CentOS7默认支持，支持event。
+
+### httpd的功能特性：
+
+* 路径别名： alias
+* 用户认证： authentication
+  - 基本认证
+  - 摘要认证
+* 虚拟主机： virtual host
+* 反向代理： 负载均衡
+* 用户站点： 当前系统上的用户都可以自行创建一个站点；
+* CGI： Common Gateway Interface，通用网关接口；
+
+### 安装httpd：
+
+* rpm -ivh httpd-version.rpm
+* yum install -y httpd
+
+* rpm -ql httpd(组织方式)：
+  - 脚本配置文件： /etc/sysconfig/httpd 
+  - 运行目录：/etc/httpd/
+  - 配置文件：
+    * 主配置文件： /etc/httpd/conf/httpd.conf,可调用所有配置文件；
+    * 扩展配置： /etc/httpd/config.d/*.conf
+  - Socket: 
+    * 80/tcp
+    * 443/tcp
+  - 模块目录： /usr/lib64/httpd/modules/
+  - 可执行文件目录：/usr/sbin/
+  ```
+    /usr/sbin/apachectl
+    /usr/sbin/fcgistarter
+    /usr/sbin/htcacheclean
+    /usr/sbin/httpd
+    /usr/sbin/rotatelogs
+    /usr/sbin/suexec
+  ```
+  - 默认文档根目录： /var/www/html
+  - CGI目录： /var/www/cgi-bin
+  - DocRoot文档根目录： 在访问文件时，其目录是相对于DocRoot目录而言；
+
+* 日志滚动：/etc/logrotate.d/httpd
+  - 日志切割；
+  - 两种滚法：
+    * 时间： 按指定时间进行滚动；
+    * 空间： 日志文件到达指定大小后进行滚动；
+
+* 配置文件： /etc/httpd/conf/httpd.conf 
+  - 使用 "配置参数 值" 的格式
+    * 配置指令不区分字符大小写；
+    * 值有可能区分字符大小写；
+    * 有些指令可以重复出现多册；
+  - 配置文件格式：
+    * 全局配置
+    * 主机配置：用于仅提供一个站点时；
+    * 虚拟主机： 用于提供多个站点时；
+    * 配置文件语法测试： # httpd -t
+    * 绝大多数配置修改后，可以使用systemctl reload httpd.service
+    * 如果修改了监听地址或端口，必须重启服务：systemctl restart httpd.service才能生效；
+
+### httpd.conf配置文件详解(基本)
+
+1. 监听套接字： Listen [IP:]port
+  此指令可以出现多次，用于指定监听多个不同的套接字；
+
+2. 配置使用keepalive：
+
+```bash
+KeepAlive {On|Off}
+KeepAliveTimeout 2    # 保持持久连接的超时时间，单位为秒
+MaxKeepAliveRequests 50  # 保持持久连接的最大请求数；
+```
+
+使用telnet测试KeepAlive开启前后的差别：
+
+```bash
+Connecting to 172.16.21.9:80...
+Connection established.
+To escape to local shell, press 'Ctrl+Alt+]'.
+Get /index.html http/1.1
+Host 172.16.21.9
+
+#此处必须有一空行后，再次回车；
+```
+
+超时或最大请求数，谁先满足，谁先断开；
+
+3. MPM: 多道处理模块；
+
+```bash
+[root@blog ~]# httpd -l   # 查看编译进核心的模块；
+Compiled in modules:
+  core.c
+  mod_so.c
+  http_core.c
+```
+
+在httpd2.2中，虽然是多道处理模块，但prefork、worker只能将其中一个编译进核心；
+想使用不同的机制，修改配置文件即可/etc/sysconfig/httpd文件
+
+```bash
+<IfModule preforck.c>  #判断模块是否存在
+	StartServers       8      #默认启动的工作进程数，不包括主进程；
+	MinSpareServers    5   #最少空闲进程数
+	MaxSpareServers   20 #最大空闲进程数
+	ServerLimit      256 #最大活动进程数   ServerLimit 大于等于MaxClients
+	MaxClients       256 #最大并发连接数，最多允许发起的连接请求的个数
+	MaxRequestsPerChild  4000 #每个子进程在生命周期内最大允许服务的最多请求个数
+  </IfModule>
+```
+
+```bash
+<IfModule worker.c>
+	StartServers         4          #启动的子进程的个数
+	MaxClients         300        #最大并发连接数，最多允许发起的连接请求的个数
+	MinSpareThreads     25    #最少空闲线程数
+	MaxSpareThreads     75   #最大空闲线程数
+	ThreadsPerChild     25      #每个子进程生成的线程数
+	MaxRequestsPerChild  0   #每个子进程在生命周期内最大允许服务的最多请求个数，0表示不限定
+	</IfModule>
+# worker也可以有ServerLimit，其值不能小于MaxClients/ThreadsPerChild 的值；
+```
+
+4. DSO模块的加载方式： 
+
+  格式： LoadModule module_name /path/to/module
+
+  例如： LoadModule php5_module /usr/lib64/httpd/modules/php5.so
+
+  如果使用相对路径，则是相对于ServerRoot所定义的目录；
+
+  让服务reload配置文件方能生效；
+
+  httpd -M 列出已装载的所有DSO模块与非DSO模块；取消的话，注释掉即可；
+
+  httpd -l 列出支持使用的非DSO模块
+  
+```bash
+[root@blog ~]# ls /usr/lib64/httpd/modules/ | grep prefork
+mod_mpm_prefork.so
+[root@blog ~]# ls /usr/lib64/httpd/modules/ | grep worker
+mod_mpm_worker.so
+[root@blog ~]# ls /usr/lib64/httpd/modules/ | grep event
+mod_mpm_event.so
+```
+
+装载模块：
+
+```bash
+[root@blog ~]# cat /etc/httpd/conf/httpd.conf | grep ^LoadModule
+LoadModule mpm_prefork_module /usr/lib64/httpd/modules/mod_mpm_prefork.so
+LoadModule mpm_worker_module /usr/lib64/httpd/modules/mod_mpm_worker.so
+LoadModule mpm_event_module /usr/lib64/httpd/modules/mod_mpm_event.so
+# module_name 就得按这样写，改了之后会报无效的标识；
+```
+
+5. 配置站点根目录： DocumentRoot /path/to/somewhere，默认是/var/www/html
+
+6. 页面访问属性：
+
+```bash
+<Direcotry "/path/to/somewhere">
+    Options 选项；访问方式，http://httpd.apache.org/docs/2.2/mod/core.html#options
+        Indexes：缺少指定的默认页面时，允许将站点根目录中的所有文件以列表形式返回给用户：危险：慎用
+        FollowSymLinks:允许跟随符号链接所指向的原始文件
+        None：所有都不启用
+        All：所有的都启用
+        ExecCGI：允许使用mod_cgi模块执行CGI脚本
+        Includes：允许使用mod_include模块实现服务器端包含(SSI)
+        IncludesNOEXEC：允许包含但不允许执行脚本
+        MultiViews：允许使用mod_negotiation实现内容协商
+        SymLinksIfOwnerMatch:在链接文件属主属组与原始文件的属主属组相同时，允许跟随符号连接所指向的原始文件
+    AllowOverride None
+    Require all granted
+</Direcotry>
+
+# 可以使用正则表达式，使用~
+```
+
+* 认证：
+  - http协议认证：
+    * 基于IP认证机制；
+    * 基于用户认证；
+  - 表单认证： 常用；
+
+7. 基于主机的访问控制：
+
+```bash
+<Direcotry "/path/to/somewhere">
+    Options 
+    AllowOverride None 不禁用下面
+    order 次序，写在后面的为默认
+        allow,deny: 没有明确允许的都拒绝
+        deny,allow：没有明确拒绝的都允许
+    Allow from
+    Deny from
+</Direcotry>
+```
+
+```bash
+# 如果二者都匹配或都不匹配时以默认(后面的)为准
+# 否则则以匹配到的为准
+Allow from
+Deny from
+    IP,Network Address
+    172.16
+    172.16.0.0
+    172.16.0.0/16
+    172.16.0.0/255.255.0.0
+# 基于IP做访问控制
+```
+
+```bash
+<Directory "/var/www/html">
+    Options Indexes FollowSymLinks
+    AllowOverride None
+    Order allow,deny
+    Allow from 192.168.1.0/24
+    Deny from 192.168.1.28/255.255.255.255 # 28这个ip不能访问；
+    Require all granted
+</Directory>
+```
+
+8. 定义默认页面： DirectoryIndex index.html index.html.var 依次查找；
+
+9. 用户目录： 
+
+如果期望让每个用户都可以创建个人站点：http://Server_IP/~Username/
+
+```bash
+userdir disablied:禁止
+userdir public_html
+# public_html是用户家目录下的目录名称，所有位于此目录中的文件均可通过前述的访问路径进行访问
+```
+
+前提：用户的家目录得赋予进行httpd进程的用户拥有执行权限
+
+```bash
+[root@blog ~]# setfacl -m u:apache:x ~sslinux
+[root@blog ~]# getfacl ~sslinux
+getfacl: Removing leading '/' from absolute path names
+# file: home/sslinux
+# owner: sslinux
+# group: sslinux
+user::rwx
+user:apache:--x
+group::---
+mask::--x
+other::---
+
+[root@blog ~]# 
+```
+
+10. 配置日志功能： /var/log/httpd/
+
+* access.log: 访问日志，其需要记录的内容需要自定义；
+* error.log : 错误日志；
+
+```bash
+访问日志：
+CustomLog "/path/to/log_file" LogFormat
+LogFormat  Format_String Format_name
+# LogFormat定义日志格式
+"%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\""
+    %h:客户端地址
+    %l:远程的登录名，通常为-(dash)
+    %u:认证时的远程用户名，通常为-
+    %t：接收到的请求时的时间，为标准英文格式时间+时区
+    \" ：转义，显示""
+    %r:请求报文的起始行,"方法，URL，协议版本"
+    %>s：响应状态码，
+    %b：以字节为单位响应报文的长度，不包含http首部；
+    %{Header_Name}i:记录指定请求报文首部的内容（value）
+    %{User-Agent}i    ：用户代理，即用户访问使用的工具，浏览器等；
+    %u：请求的URL
+        
+详情请参考：http://httpd.apache.org/docs/2.2/mod/mod_log_config.html#formats
+ 错误日志：ErrorLog
+```
+
+示例：
+
+```bash
+<IfModule log_config_module>
+    #
+    # The following directives define some format nicknames for use with
+    # a CustomLog directive (see below).
+    #
+    LogFormat "%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\"" combined
+    LogFormat "%h %l %u %t \"%r\" %>s %b" common
+
+    <IfModule logio_module>
+      # You need to enable mod_logio.c to use %I and %O
+      LogFormat "%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\" %I %O" combinedio
+    </IfModule>
+
+    #
+    # The location and format of the access logfile (Common Logfile Format).
+    # If you do not define any access logfiles within a <VirtualHost>
+    # container, they will be logged here.  Contrariwise, if you *do*
+    # define per-<VirtualHost> access logfiles, transactions will be
+    # logged therein and *not* in this file.
+    #
+    #CustomLog "logs/access_log" common
+
+    #
+    # If you prefer a logfile with access, agent, and referer information
+    # (Combined Logfile Format) you can use the following directive.
+    #
+    CustomLog "logs/access_log" combined
+</IfModule>
+```
+
+11. 路径别名： Alias /alias/ "/path/to/somewhere" 
+
+    意味着访问http://Server_IP/alias时，其页面文件来自于/path/to/somewhere中；
+
+    例如： Alias /root "/var/www/html"
+
+12. 指定默认的字符集： AddDefaultCharset 
+
+    例如：AddDefaultCharset UTF-8
+
+---
+
+## httpd配置详解(高级)
+
+### 1.脚本路径别名(CGI接口)
+### 2.基于用户的访问控制
+### 3.虚拟主机
+### 4.https协议
+### 5.服务器status页面
+### 6.curl命令
+### 7.mod_deflate模块
+### 8.httpd自带的工具
+### 9.资源限定
+### 10.ab工具的初步使用
+### 11.httpd-2.4编译安装
+
+
+## I/O
+
+### 阻塞
+### 非阻塞
+### 同步
+### 异步
+### 同步阻塞
+### 异步阻塞
+### 网络博客
