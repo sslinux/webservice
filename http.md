@@ -271,5 +271,134 @@ Accept首部：
 
 ---
 
+HTTP请求： request -> HTTP请求报文：
+        
+* 报文格式：
 
+```bash
+<method> <request-URL> <version>    	#起始行，请求行；
+<headers>
+
+<entity-body>   
+
+#首部：
+    Name：Value
+    Content-type：images/gif
+```
+
+* 参数解释：
+
+```
+    <method>:请求方法，希望服务器端能够执行的动作，如GET，HEAD、POST等
+    <request-url>:请求的资源，可以是相对路径，也可以是完整的URL；
+    <version>:协议版本，格式HTTP/<major>.<minor>,如http/1.0
+    <headers>:HTTP首部
+    <status>:状态码
+    <reason-phrase>:原因短语，数字状态码易读信息
+    <entity-body>:主体部分；
+```
+
+HTTP响应： response -> HTTP响应报文：
+
+* 报文格式：
+
+```bash
+<version> <status> <reason-phrase>   # 起始行，响应行
+<headers>
+
+<entity-body>   # 响应主体
+```
+
+* 响应报文状态码：
+
+  - 1xx： 信息性状态码
+    * 100 continue
+    * 101 切换协议
+  - 2xx： 成功状态码
+    * 200 ok，确定，客户端请求已成功；
+    * 201 Created，已创建；
+    * 202 已接受；
+    * 203 非权威信息；
+    * 204 无内容；
+    * 205 重置内容；
+    * 206 部分内容；
+    * 207 多状态(WebDAV)
+  - 3xx: 重定向状态码
+    * 301 moved permanently 永久重定向，在响应报文中使用首部"Location:URL" 指定资源现在所处的位置；
+    * 302 Found  临时重定向，在响应报文中使用首部"Location： URL"，指定临时资源位置；
+    * 304 Not Modified 条件式请求时使用，相对于缓存中已有的进行比较；
+  - 4xx： 客户端类型的错误；
+    * 403 Forbidden，请求被服务器拒绝；
+    * 404 Not Found，服务器无法找到请求的URL；
+    * 405 Method Not Allowed，不允许使用此方法请求相应的URL；
+  - 5xx： 服务器类的错误
+    * 500 Internal Server Error，服务器内部错误；
+    * 502 Bad Gateway，代理服务器从上游收到一条伪响应；
+    * 503 Service Unavailable，服务器此时无法提供服务，但将来可能可用；
+
+一次完整的http连接：
+
+* 1.名称解析(hosts,DNS)
+* 2.客户端与服务端的基于tcp连接的三次握手；
+* 3.请求资源，响应资源；
+* 4.TCP四次断开；
+
+![一次完整的http连接](images/一次完整的http连接.png)
+
+一次HTTP事务结束后，连接即行断开，带来的结果是效率较低，
+
+加速方式：
+
+* 1. 并行连接(第一次只能是一个，即URL中指定的一个)；
+  - 并行连接的确定：
+    * 每个事务都会打开/关闭一条心得连接，会耗费时间和带宽；
+    * 由于TCP的慢启动特性的存在，每条新连接的性能会有所降低；
+    * 可打开的并行连接数量实际上是有限的；
+
+* 持久连接(请求资源后不断开，继续请求资源，直到请求完毕后断开)；
+
+  - 两种实现： 二者谁先满足都会断开；
+    * 限定超时时间；
+    * 限定单次持久连接所能请求的资源数量；
+  - 持久连接避免了多次TCP连接、断开，但也导致了高并发时的用户等待；调优时，需要寻找一个折衷点；
+
+
+* 一次Web请求的基本过程： web服务器输入/输出结构；
+  - 1.建立连接；
+  - 2.接收请求
+  - 3.处理请求
+  - 4.访问资源
+  - 5.构建响应
+  - 6.发送响应
+  - 7.记录日志
+
+sendfile()机制，减少文件在内存中的复制次数，从而节约服务器内存资源；
+
+
+### http： C/S 
+
+* Client GUI:
+  - IE
+  - FireFox
+  - Safari
+  - Chrome
+  - Opera
+
+* Client CLI:
+  - elinks
+  - curl
+
+* Server:
+  - ASF: httpd
+  - Nginx
+  - lighttpd
+  - App Server:
+    * IIS
+    * tomcat
+    * jetty
+    * resin
+
+---
+
+## httpd(Apache)
 
