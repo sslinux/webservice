@@ -887,11 +887,149 @@ EOF
     
 ### 4.https协议
 
+![https](images/https_pic1.png)
+
+![http与https的会话过程](images/http与https的会话过程.png)
+
+http: 文本协议，tcp/80
+https: 二进制格式的协议；  tcp/443
+
+SSL会话基于IP地址进行： 不支持在基于 FQDN的虚拟主机上实现；
+
+* 客户端验证服务器证书时：
+  - 日期检测：证书是否在有效期内；
+  - 证书颁发者的可信度；
+  - 证书的签名检测
+  - 持有者的身份检测： 证书中的持有者与客户端访问的主机是否一致；
+
+RHEL或CentOS系统中SSL的测试： /etc/pki/tls/certs/目录下： 可以使用make命令来创建测试使用的私钥、证书请求、证书等。仅测试使用；
+
+httpd： 基于mod_ssl模块实现对ssl的支持：
+
+![httpd基于mod_ssl模块实现对ssl的支持](images/httpd基于mod_ssl模块实现对ssl的支持.png)
 
 ### 5.服务器status页面
+
+内生的status信息，且此信息可以通过web予以展示；
+
+配置文件系统访问属性： 
+
+```bash
+<Directory [~] "">
+</Directory>
+```
+~ 表示支持使用正则表达式
+
+```bash
+<DirectoryMatch>
+</DirectoryMatch>
+```
+
+```bash
+<File [~] " " >
+</File>
+```
+```bash
+<FileMatch>
+</FileMatch>
+```
+
+配置URL访问属性： 
+
+```bash
+<Location [~] " ">
+</Location>
+
+<LocationMatch " ">
+</LocationMatch>
+```
+如果要配置其属性的URL能映射到某具体文件系统路径，建议使用<Directory>;
+
+处理器：是当文件被调用时，Apache内部表示形式；
+一般每种文件类型都有其隐式处理器；
+
+显式的定义使用的处理器 SetHandler
+
+```bash
+<Location /URL>
+	SetHandler server-status
+</Location>
+```
+
+* 定义访问控制机制：
+  - 基于IP控制
+  - 基于用户控制
+
+示例：
+
+```bash
+<Location /server-status>
+    SetHandler server-status
+    AuthType Basic
+    AuthName "Server Status"
+    AuthUserFile "/etc/httpd/conf/.htpasswd"
+    Require valid-user
+    Order deny,allow
+    Allow from all
+</Location>
+```
+
 ### 6.curl命令
+
+curl是基于URL语法在命令行模式下工作的文件传输工具，它支持FTP，FTPS，HTTP，HTTPS，GOPHER，TELNET，DICT，FILE及LDAP等协议。
+
+curl支持HTTPS认证，并且支持HTTPS的POST、PUT等方法，FTP上传， kerberos认证，HTTP上传，代理服务器， cookies， 用户名/密码认证， 下载文件断点续传，上载文件断点续传,，http代理服务器管道（proxy tunneling）， 甚至它还支持IPv6， socks5代理服务器,，通过http代理服务器上传文件到FTP服务器等等，功能十分强大。
+
+![curl命令常用选项](images/curl命令常用选项.png)
+
+```bash
+root# curl -basic -u tom:123456 http://192.168.1.42/server-status
+```
+
+
 ### 7.mod_deflate模块
+
+使用mod_deflate模块压缩页面,优化传输速度，可以写为一行，也可以写为多行，默认压缩方式为gzip；
+
+适用于： CPU占用率低，带宽占用率高时使用；
+
+判断该模块是否已安装：httpd -M | grep mod_deflate
+
+在httpd.conf文件中使用<IfModule mod_deflate.c>定义使用
+
+```bash
+SetOutputFilter DEFLATE		#启用deflate压缩
+# mod_deflate configuration
+<IfModule mod_deflate.c>
+ 
+	# Restrict compression to these MIME types
+	#根据类型进行匹配，可以写为一行，多种类型间用空格隔开；但为了调试方便，建议写成多行；
+	AddOutputFilterByType DEFLATE text/plain
+	AddOutputFilterByType DEFLATE text/html
+	AddOutputFilterByType DEFLATE application/xhtml+xml
+	AddOutputFilterByType DEFLATE text/xml
+	AddOutputFilterByType DEFLATE application/xml
+	AddOutputFilterByType DEFLATE application/x-javascript
+	AddOutputFilterByType DEFLATE text/javascript
+	AddOutputFilterByType DEFLATE text/css
+	# Level of compression (Highest 9 - Lowest 1)默认为6
+	DeflateCompressionLevel 9
+	# Netscape 4.x has some problems.
+	BrowserMatch ^Mozilla/4 gzip-only-text/html	 
+	#BrowserMatch进行浏览器匹配，可以使用正则表达式；
+	# Netscape 4.06-4.08 have some more problems
+  BrowserMatch ^Mozilla/4\.0[678] no-gzip	 
+	# MSIE masquerades as Netscape, but it is fine
+	BrowserMatch \bMSI[E] !no-gzip !gzip-only-text/html
+</IfModule>
+```
+
+也可以在/etc/httpd/conf.d/目录下创建一个以.conf结尾的文件，在该文件中定义，可以不用<IfModule mod_deflate.c>,但在主配置文件中需要LoadModule deflate
+
 ### 8.httpd自带的工具
+
+![httpd自带的工具](images/httpd自带的工具.png)
+
 ### 9.资源限定
 ### 10.ab工具的初步使用
 ### 11.httpd-2.4编译安装
