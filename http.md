@@ -769,10 +769,125 @@ LogFormat  Format_String Format_name
 
 ## httpd配置详解(高级)
 
-### 1.脚本路径别名(CGI接口)
+### 1.脚本路径别名(CGI接口) : 此处表述不清，后期补充；
+
+URL --> Filesystem Directory
+
+CGI: Common Gateway Interface
+* mod_alias
+* mod_cgi
+* CGI(通用网关接口)使Web可以跟一个应用程序进行交互，从通信环境中获得结果。
+* CGI是不安全的，在第一行写入： echo "Content-Type: text/html"
+* ScriptAlias /URL/ "/path/to/somewhere"  , somewhere下的文件可以被执行，也可以在目录中实现；
+* 格式一般为：
+
+```bash
+cat << EOF
+Content-Type: text/html
+<pre>
+<h1>The time is: `date`.</h1>
+</pre>
+EOF
+```
+
 ### 2.基于用户的访问控制
+
+请求-->质询(首部:WWW-Authenticate)-->认证(首部:Authenrization)-->成功(首部:Authentication-Info)
+
+虚拟用户：不是系统用户，只是为了获取某种资源类型的一种虚拟的用户
+	   文件/etc/httpd/conf/.htpasswd
+	   SQL数据库
+	   dbm：
+	   ldap:轻量级目录访问协议
+
+认证类型(auth)：
+    basic：基本认证，账号和密码明文发送
+    digest：摘要认证，hash编码之后发送
+认证提供者(authentication provider):账号和密码的存放位置
+    authn
+授权机制(authorization):根据什么进行授权
+    authz      
+
+* 案例：基于文件，做基本认证，根据用户和组进行授权
+
+  - 1.编辑配置文件，为需要认证的目录配置认证机制；
+
+```bash
+<Directory "/www/htdocs/fin">
+    options None
+    AllowOverride AuthConfig 使用认证配置
+    AuthType Basic 使用基本认证
+    AuthName "Private Area" 质询时标题
+    AuthUserFile /etc/http/conf/.htpasswd  密码的存放位置
+    Require valid-user 可访问的用户
+</Directory>
+```
+  - 2.使用htpasswd命令生成认证库：
+
+```bash
+ htpasswd命令
+      -c 创建文件，创建第一个用户时使用
+      htpasswd -c -m /etc/http/conf/.htpasswd tom
+      -m MD5格式存放
+      -b 批量模式
+      -D 删除用户
+```
+
+  - 3、基于组认证：
+
+```bash
+    <Directory "/www/htdocs/fin">
+        options None
+        AllowOverride AuthConfig 使用认证配置
+        AuthType Basic 使用基本认证
+        AuthName "Private Area" 质询时标题
+		AuthUserFile /etc/http/conf/.htpasswd
+        AuthgroupFile /etc/http/conf/.grpasswd  密码的存放位置
+        Require group testgroup  可访问的用户
+    </Directory>
+
+       先创建用户，再创建组
+       组文件：
+         组名：用户1 用户2 用户3
+		testgroup: tom
+```
+
 ### 3.虚拟主机
+
+一个物理服务器提供多个站点；使用虚拟主机必须先取消中心主机；
+
+主服务器和虚拟主机不能并存，若要使用虚拟主机，先把主服务器中的DocumentRoot注释掉；
+
+* 虚拟主机：
+  - 基于ip的虚拟主机： 变化IP
+  - 基于port的虚拟主机： 变化port
+
+  ```bash
+    <VirtualHost IP:port>
+      		SeverName
+      		DocumentRoot "/PATH"
+      <Directory "">
+			Options
+      </Directory>
+      		ServerAlias
+     		 ServerAdmin
+    </VirtualHost>
+  ```
+  
+  - 基于FQDN(主机名)的虚拟主机： 变化ServerName：
+    * 依靠HTTP请求报文中的Host首部区分访问的主机；
+    * 在httpd2.2中，使用基于FQDN的虚拟主机，必须启用NameVirtualHost *:80行，且在虚拟主机中定义时IP与port需与此处一致；
+
+  - 虚拟主机的单独配置： 和主服务器中的配置一样
+    * 用户认证
+    * 访问日志
+    * 错误日志
+    * 路径别名  
+    * 脚本别名
+    
 ### 4.https协议
+
+
 ### 5.服务器status页面
 ### 6.curl命令
 ### 7.mod_deflate模块
@@ -784,10 +899,89 @@ LogFormat  Format_String Format_name
 
 ## I/O
 
-### 阻塞
-### 非阻塞
-### 同步
-### 异步
+### 阻塞(Block)： 进程发起I/O调用，未完成之前，当前进程会被挂起；  调用者；
+
+* 阻塞调用是指调用结果返回之前，当前线程会被挂起（线程进入非可执行状态，在这个状态下，cpu不会给线程分配时间片，即线程暂停运行）。函数只有在得到结果之后才会返回。
+
+* 有人也许会把阻塞调用和同步调用等同起来，实际上他是不同的。对于同步调用来说，很多时候当前线程还是激活的，只是从逻辑上当前函数没有返回而已。
+
+* 例如，我们在socket中调用recv函数，如果缓冲区中没有数据，这个函数就会一直等待，直到有数据才返回。而此时，当前线程还会继续处理各种各样的消息。
+
+* 快递的例子：比如你在某个时候到A楼一层（假如是内核缓冲区）取快递，但是你不知道快递什么时候过来，你又不能干别的事，只能死等着。但你可以睡觉（进程处于休眠状态），因为你知道快递把货送来时一定会给你打个电话（假定一定能叫醒你）。
+
+
+### 非阻塞(Unblock): 进程发起I/O调用，被调用函数完成之前不会阻塞当前进程，而是立即返回；盲等； 调用者；
+
+* 非阻塞和阻塞的概念相对应，指在不能立刻得到结果之前，该函数不会阻塞当前线程，而会立刻返回。
+
+* 还是等快递的例子：如果用忙轮询的方法，每隔5分钟到A楼一层(内核缓冲区）去看快递来了没有。如果没来，立即返回。而快递来了，就放在A楼一层，等你去取。
+
+* 同步IO和异步IO的区别就在于：数据拷贝的时候进程是否阻塞！
+* 阻塞IO和非阻塞IO的区别就在于：应用程序的调用是否立即返回！
+
+### 同步(Sync): 进程发起一个过程(功能、函数)调用后，在没得到结果之前，该调用将不会返回；
+
+* 所谓同步，就是在发出一个功能调用时，在没有得到结果之前，该调用就不返回。
+* 也就是必须一件一件事情的做，等前一件做完了才能做下一件；
+* 例如：普通B/S模式(同步): 提交请求 -> 等待服务器处理 -> 处理完毕返回  这个期间客户端浏览器不能干任何事；
+
+### 异步(Async): 进程发起一个过程调用，即使调用者不能立即得到结果，但调用却会返回，返回的是未完成状态；当调用完成后，内核会自行通知调用者结果已经OK。
+
+* 异步的概念和同步相对。当一个异步过程调用发出后，调用者不能立刻得到结果。实际处理这个调用的部件在完成后，通过状态、通知和回调来通知调用者。
+
+* 例如 ajax请求（异步）: 请求通过事件触发->服务器处理（这时浏览器仍然可以作其他事情）->处理完毕
+
 ### 同步阻塞
+
 ### 异步阻塞
-### 网络博客
+
+
+## Linux下的五种I/O模型
+
+同步：
+
+* 阻塞I/O(blocking I/O)
+
+    应用程序调用一个IO函数，导致应用程序阻塞，等待数据准备好。 如果数据没有准备好，一直等待….数据准备好了，从内核拷贝到用户空间,IO函数返回成功指示。
+
+![阻塞IO模型](images/阻塞IO模型.jpg)   
+
+* 非阻塞I/O(noblocking I/O)
+
+我们把一个SOCKET接口设置为非阻塞就是告诉内核，当所请求的I/O操作无法完成时，不要将进程睡眠，而是返回一个错误。这样我们的I/O操作函数将不断的测试数据是否已经准备好，如果没有准备好，继续测试，直到数据准备好为止。在这个不断测试的过程中，会大量的占用CPU的时间。
+
+![非阻塞IO模型](images/非阻塞IO模型.jpg)
+
+* I/O复用(select 和 poll) (I/O multiplexing) : select(),poll()
+
+主要是select和epoll；对一个IO端口，两次调用，两次返回，比阻塞IO并没有什么优越性；关键是能实现同时对多个IO端口进行监听；
+
+I/O复用模型会用到select、poll、epoll函数，这几个函数也会使进程阻塞，但是和阻塞I/O所不同的的，这两个函数可以同时阻塞多个I/O操作。而且可以同时对多个读操作，多个写操作的I/O函数进行检测，直到有数据可读或可写时，才真正调用I/O操作函数。
+
+![IO复用模型](images/IO复用模型.jpg)
+
+* 信号驱动I/O (signal dtriven I/O(SIGIO)) : epoll(),kqueue()  
+  - 边缘触发
+  - 水平触发
+
+    两次调用，两次返回:
+
+    首先我们允许套接口进行信号驱动I/O,并安装一个信号处理函数，进程继续运行并不阻塞。当数据准备好时，进程会收到一个SIGIO信号，可以在信号处理函数中调用I/O操作函数处理数据。
+
+![信号驱动IO模型](images/信号驱动IO模型.jpg)
+
+异步：
+
+* 异步I/O (asynchronous I/O (the POSIX aio_functions)) 
+
+数据拷贝的时候进程无需阻塞。
+
+    当一个异步过程调用发出后，调用者不能立刻得到结果。实际处理这个调用的部件在完成后，通过状态、通知和回调来通知调用者的输入输出操作
+
+![异步IO模型](images/异步IO模型.jpg)
+
+
+## 五种IO模型的比较：
+
+![五种IO模型的比较](images/五种IO模型的比较.jpg)
+
