@@ -1031,9 +1031,284 @@ SetOutputFilter DEFLATE		#启用deflate压缩
 ![httpd自带的工具](images/httpd自带的工具.png)
 
 ### 9.资源限定
+
+软限制： 可以超出的限制，但仅能超出一定时长；
+
+硬限制： 绝对不能超出的限制； 
+* 修改硬限制： vim /etc/security/limits.conf文件
+  - 格式： 字段1 字段2 字段3 字段4
+  - 格式： 对谁进行限定 类型要限定的选项 值
+* 扩展配置： /etc/security/limit.d/*.conf
+* 修改配置文件后不会立即生效，想立即生效，需要使用ulimit命令设置；
+
+ulimit命令(只能修改软限制):
+* -n [N]   显示或限定能打开的最大的文件句柄数；
+* -u [N]   能打开的最大进程数；
+
 ### 10.ab工具的初步使用
+
+![ab工具的初步使用](images/ab工具的初步使用.png)
+
+测试结果说明： 
+
+```bash
+[root@www conf.d]# ab -c 100 -n 50000 http://www.kalaguiyin.com/index.html
+This is ApacheBench, Version 2.3 <$Revision: 655654 $>
+Copyright 1996 Adam Twiss, Zeus Technology Ltd, http://www.zeustech.net/
+Licensed to The Apache Software Foundation, http://www.apache.org/
+
+Benchmarking www.kalaguiyin.com (be patient)
+Completed 5000 requests
+Completed 10000 requests
+Completed 15000 requests
+Completed 20000 requests
+Completed 25000 requests
+Completed 30000 requests
+Completed 35000 requests
+Completed 40000 requests
+Completed 45000 requests
+Completed 50000 requests
+Finished 50000 requests
+
+
+Server Software:        Apache/2.2.15         #服务器软件版本；
+Server Hostname:        www.kalaguiyin.com    #服务器主机名；
+Server Port:            80					  #服务器端口；
+
+Document Path:          /index.html           #服务器文档路径
+Document Length:        37 bytes              #文档长度；
+
+Concurrency Level:      100                   #并发数量；
+Time taken for tests:   8.293 seconds         #测试所经历的时长；
+Complete requests:      50000				  #成功的请求；
+Failed requests:        0                     #失败的请求；
+Write errors:           0                     #写失败，即请求失败；
+Total transferred:      16363080 bytes        #一共传输了多少字节，包含报文首部；
+HTML transferred:       1851480 bytes		  #传输的文档容量，不包含报文首部；
+Requests per second:    6029.07 [#/sec] (mean)  #每秒响应的请求数；
+Time per request:       16.586 [ms] (mean)      #每一批(-c指定的number)请求消耗的时长；
+Time per request:       0.166 [ms] (mean, across all concurrent requests) 每个请求消耗的时长；
+Transfer rate:          1926.84 [Kbytes/sec] received   #每秒传输的k字节数
+
+Connection Times (ms)
+              min  mean[+/-sd] median   max
+Connect:        0    4   2.7      3      16    #连接时间；
+Processing:     2   13   2.9     13      33    #整体处理时间；
+Waiting:        2   11   3.5     12      31    #处理请求的等待时间；
+Total:         10   16   2.7     16      36    #总共时间；
+
+Percentage of the requests served within a certain time (ms)
+  50%     16
+  66%     17
+  75%     17
+  80%     18
+  90%     20
+  95%     21
+  98%     25
+  99%     27
+ 100%     36 (longest request)
+```
+
+---
+
 ### 11.httpd-2.4编译安装
 
+依赖于较高版本的apr和apr-util。apr全称为apache portable runtime(1.4以上版本)，这是一个独立项目(让Apache跨平台的底层库)
+
+* 编译2.4版本前需要先停止原有httpd服务，并从chkconfig list中取消开机自启动:
+
+```bash
+systemctl disable httpd.service
+systemctl stop httpd.service
+```
+
+* 并且必须安装开发环境:
+
+```bash
+yum groupinstall -y "Development Tools"
+```
+
+* 编译安装依赖于pcre-devel包；
+
+```bash
+# yum install -y pcre-devel
+# yum install expat-devel -y 
+```
+
+* 编译安装apr和apr-utils：
+
+```bash
+wget https://www-eu.apache.org/dist//apr/apr-1.6.5.tar.gz
+tar xf apr-1.6.5.tar.gz
+cd apr-1.6.5
+./configure --prefix=/usr/local/apr && make && make install
+```
+
+```bash
+wget https://www-eu.apache.org/dist//apr/apr-util-1.6.1.tar.gz
+tar xf apr-util-1.6.1.tar.gz 
+cd apr-util-1.6.1
+./configure --prefix=/usr/local/apr-util --with-apr=/usr/local/apr/ && make && make install 
+```
+
+* http-2.4新特性：
+  - 1.MPM支持在运行时装载： --enable-mpms-share-all --with-mpm=event
+  - 2.支持event
+  - 3.异步读写
+  - 4.在模块及其目录上指定日志级别；
+  - 5.每请求配置： <If>,<Elseif>
+  - 6.增强版的表达式解析器；
+  - 7.毫秒级的keepalive timeout
+  - 8.基于FQDN的虚拟主机不再需要NameVirtualHost指令；
+  - 9.支持使用自定义变量；
+
+  新增加了一些模块：mod_proxy_fcgi,mod_ratelimit,mod_request,mod_remoteip
+对于基于IP的访问控制做了修改，不再支持使用order，allow，deny这些机制，而是统一使用require进行；
+
+* 编译安装httpd：
+
+```bash
+wget https://www-us.apache.org/dist//httpd/httpd-2.4.38.tar.gz
+tar xf httpd-2.4.38.tar.gz
+cd httpd-2.4.38
+# ./configure --prefix=/usr/local/apache --sysconfdir=/etc/http24 --enable-so --enable-ssl=/usr/bin/openssl --enable-cgi --enable-rewrite --with-zlib --with-pcre --with-apr=/usr/local/apr --with-apr-util=/usr/local/apr-util/ --enable-modules=most --enable-mpms-shared=all --with-event=event
+
+# make && make install
+```
+
+后续配置操作：
+
+* 1.导出头文件：
+```bash
+[root@apache httpd-2.4.38]# ln -sv /usr/local/apache/include/ /usr/include/httpd
+‘/usr/include/httpd’ -> ‘/usr/local/apache/include/’
+```
+
+* 2.导出库文件：
+
+```bash
+[root@apache httpd-2.4.38]# ldconfig -p  # 显示当前系统的库文件；
+```
+
+* 3.导出man手册：
+
+```bash
+[root@apache httpd-2.4.38]# vim /etc/man.config
+[root@apache httpd-2.4.38]# cat /etc/man.config
+MANPATH /usr/local/apache/man/
+[root@apache httpd-2.4.38]# man -M /usr/local/apache/man httpd
+```
+
+* 4.修改环境变量：
+
+```bash
+[root@apache httpd-2.4.38]# vim /etc/profile.d/httpd.sh
+[root@apache httpd-2.4.38]# cat /etc/profile.d/httpd.sh
+PATH=/usr/local/apache/bin:$PATH
+[root@apache httpd-2.4.38]# source /etc/profile.d/httpd.sh
+[root@apache httpd-2.4.38]# httpd -V   # 查看环境变量是否修改成功；
+Server version: Apache/2.4.38 (Unix)
+Server built:   Feb 21 2019 15:34:38
+Server's Module Magic Number: 20120211:83
+Server loaded:  APR 1.6.5, APR-UTIL 1.6.1
+Compiled using: APR 1.6.5, APR-UTIL 1.6.1
+Architecture:   64-bit
+Server MPM:     event
+  threaded:     yes (fixed thread count)
+    forked:     yes (variable process count)
+Server compiled with....
+ -D APR_HAS_SENDFILE
+ -D APR_HAS_MMAP
+ -D APR_HAVE_IPV6 (IPv4-mapped addresses enabled)
+ -D APR_USE_SYSVSEM_SERIALIZE
+ -D APR_USE_PTHREAD_SERIALIZE
+ -D SINGLE_LISTEN_UNSERIALIZED_ACCEPT
+ -D APR_HAS_OTHER_CHILD
+ -D AP_HAVE_RELIABLE_PIPED_LOGS
+ -D DYNAMIC_MODULE_LIMIT=256
+ -D HTTPD_ROOT="/usr/local/apache"
+ -D SUEXEC_BIN="/usr/local/apache/bin/suexec"
+ -D DEFAULT_PIDLOG="logs/httpd.pid"
+ -D DEFAULT_SCOREBOARD="logs/apache_runtime_status"
+ -D DEFAULT_ERRORLOG="logs/error_log"
+ -D AP_TYPES_CONFIG_FILE="/etc/http24/mime.types"
+ -D SERVER_CONFIG_FILE="/etc/http24/httpd.conf"
+```
+
+* 5.此时可以使用apachectl命令启动服务了；
+
+* 使用event方式运行： 
+
+```bash
+# 备份配置文件： 
+[root@apache httpd-2.4.38]# cd /etc/http24/
+[root@apache http24]# ls
+extra  httpd.conf  magic  mime.types  original
+[root@apache http24]# cp httpd.conf{,.bak}
+[root@apache http24]# ls
+extra  httpd.conf  httpd.conf.bak  magic  mime.types  original
+[root@apache http24]# vim httpd.conf
+[root@apache http24]# cat httpd.conf | grep ^LoadModule
+LoadModule mpm_event_module modules/mod_mpm_event.so   
+# 保证启用
+
+[root@apache http24]# httpd -t
+Syntax OK
+[root@apache http24]# httpd -M | grep event
+ mpm_event_module (shared)
+```
+
+* httpd2.4基于IP访问控制：
+  - 允许所有主机访问： Require all granted
+  - 拒绝所有主机访问： Require all deny
+  - 控制某主机的访问：
+    * Require ip IPADDR
+    * Require not ip IPADDR
+    * IPADDR：
+      - 单个IP地址，例如：Require ip 172.16.21.9
+      - Network/Netmask,例如： Require ip 172.16.0.0/255.255.0.0
+      - Network/Length, 例如： Require not ip 172.16.0.0/16
+      - Net: 172.16
+  - 基于主机名控制：
+    * Require host HOSTNAME
+    * Require not host HOSTNAME
+    * HOSTNAME：
+      - FQDN： 具体的主机；
+      - DOMAIN： 域名， 例如： .sslinux.com
+
+* 编写httpd24服务service文件；
+  - 修改PIDFile文件的目录：  在httpd.conf文件中添加一行： PidFile "/var/run/http24.pid"
+  - CentOS7编写Unit文件：
+
+```bash
+[root@apache http24]# cat /usr/lib/systemd/system/httpd.service 
+[Unit]
+Description=The Apache HTTP Server
+After=network.target remote-fs.target nss-lookup.target
+Documentation=man:httpd(8)
+Documentation=man:apachectl(8)
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/http24/httpd.conf
+ExecStart=/usr/local/apache/bin/httpd -k start -DFOREGROUND
+ExecReload=/usr/local/apache/bin/httpd -k graceful
+ExecStop=/bin/kill -WINCH ${MAINPID}
+# We want systemd to give httpd some time to finish gracefully, but still want
+# it to kill httpd after TimeoutStopSec if something went wrong during the
+# graceful stop. Normally, Systemd sends SIGTERM signal right after the
+# ExecStop, which would kill httpd. We are sending useless SIGCONT here to give
+# httpd time to finish.
+KillSignal=SIGCONT
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+```
+
+      
+
+---
 
 ## I/O
 
